@@ -1,8 +1,10 @@
 # Information
 
-### Title: README.md
+**Title**: final_project_EDUC867
 
-### Author: Brendan Barnhart
+**Author**: Brendan Barnhart
+
+**Instructor**: Ethan McCormick
 
 # Background and Usage
 
