@@ -1,0 +1,9 @@
+---
+title: "Final Project EDUC867"
+date: today
+date-format: "YYYY-MM-DD"
+format: html
+editor: visual
+author: Brendan Barnhart
+---
+
