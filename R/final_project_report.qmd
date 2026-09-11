@@ -34,7 +34,7 @@ This section will have all the reproducible information needed.
 
 #### Portability Evidence
 
-I used a different laptop (my old Lenovo Yoga 7), went to my gitHub project, and downloaded a .zip file of the entire repository. After extracting, I opened the final_project_report.qmd file and clicked on Render. There were no issues and the file rendered successfully.
+I used a different laptop (my old Lenovo Yoga 7), went to my gitHub project, and downloaded a .zip file of the entire repository. After extracting, I opened the final_project_report.qmd file and clicked on Render. Additionally, I used the Windows Powershell and ran the command in the README.md file. There were no issues and the file rendered successfully.
 
 ```{r}
 sessionInfo()
