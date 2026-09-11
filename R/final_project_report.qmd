@@ -9,11 +9,19 @@ author: Brendan Barnhart
 
 ## Introduction
 
+The introduction to the final project report will live right here.
+
 ## Data
+
+The description of the data source will be here.
 
 ## Methods
 
+The description of the analysis methods/models/etc. will live here.
+
 ## Results
+
+All results will live in this section.
 
 ```{r}
 cast_members = c("Howard","Penny","Raj","Leonard","Sheldon") 
@@ -21,6 +29,12 @@ print(cast_members)
 ```
 
 ## Reproducibility
+
+This section will have all the reproducible information needed.
+
+#### Portability Evidence
+
+I used a different laptop (my old Lenovo Yoga 7), went to my gitHub project, and downloaded a .zip file of the entire repository. After extracting, I opened the final_project_report.qmd file and clicked on Render. There were no issues and the file rendered successfully.
 
 ```{r}
 sessionInfo()
