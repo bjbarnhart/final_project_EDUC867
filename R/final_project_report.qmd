@@ -7,3 +7,12 @@ editor: visual
 author: Brendan Barnhart
 ---
 
+## Introduction
+
+## Data
+
+## Methods
+
+## Results
+
+## Reproducibility
