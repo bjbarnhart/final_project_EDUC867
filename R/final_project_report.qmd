@@ -15,4 +15,13 @@ author: Brendan Barnhart
 
 ## Results
 
+```{r}
+cast_members = c("Howard","Penny","Raj","Leonard","Sheldon") 
+print(cast_members)
+```
+
 ## Reproducibility
+
+```{r}
+sessionInfo()
+```
