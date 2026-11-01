@@ -67,7 +67,7 @@ fit_ols = function(df, predictors, response){
   y_hat = X %*% beta
   e = y - y_hat
   SSE = as.numeric(t(e) %*% e)
-  SSR = as.numeric(t(beta) %*% Xty - (1/n) * t(y) %*% matrix(1, n, n) %*% y)
+  SSR = as.numeric(t(beta) %*% Xty - sum(y)^2 / n)
   SST = SSR + SSE
   
   # Residual variance and standard errors
