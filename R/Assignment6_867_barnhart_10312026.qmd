@@ -1,0 +1,313 @@
+---
+title: "Assignment 6 | 867 Statistical Programming in R & Python | Step 1: Power Study Design"
+format: html
+editor: visual
+author: Brendan Barnhart
+---
+
+```{r}
+#| message: false
+#| warning: false
+source("ols_functions.R")
+```
+
+This is the design document for the Step 1 power study of the final project. I am on the standard regression track. The functions are in my repo: https://github.com/bjbarnhart/final_project_EDUC867
+
+For this study, I am looking at what happens when a researcher takes a continuous predictor and splits it at the median into "high" and "low" groups. I will run every simulated data set two ways: once with x1 left continuous, and once with x1 median split.
+
+## The Question
+
+This study will look at how often my fit_ols() function finds a significant result for B1 (p \< .05) when x1 is left continuous compared to when x1 is median split. I will look at sample sizes from n = 20 to n = 2,400 for B1 = 0 (false positive rate check), B1 = 0.1 (small), and B1 = 0.3 (medium), and I will also track how often x2, which has no real effect, shows up as significant. The goal is to find the smallest sample size that gives 80% power for each effect size, and to see whether median splitting x1 causes false positives for x2.
+
+## Data-Generating Model
+
+We will be using the regression model below to generate the data. x1 is the predictor I care about, x2 has no real effect, and x3 has a real effect.
+
+$$y_i = \beta_0 + \beta_1 x_{1i} + \beta_2 x_{2i} + \beta_3 x_{3i} + \epsilon_i, \quad \epsilon_i \sim N(0, \sigma^2)$$
+
+All three predictors are standard normal. Since variables in the real world are almost always correlated, every pair of predictors has a moderate correlation:
+
+$$\text{cor}(x_1, x_2) = \text{cor}(x_1, x_3) = \text{cor}(x_2, x_3) = \rho = 0.3$$
+
+The data is always generated with x1 as a continuous variable. The difference is in how I analyze it. In the second analysis, x1 is replaced with a 0/1 variable that is 1 if x1 is above its median and 0 otherwise:
+
+$$x_{1i}^{split} = \begin{cases} 1 & \text{if } x_{1i} > \text{median}(x_1) \\ 0 & \text{otherwise} \end{cases}$$
+
+Here are the values I will use:
+
+- B0 = 0. The intercept doesn't affect the test for B1.
+- B1 = 0, 0.1, and 0.3. B1 = 0 lets me check the false positive rate, and 0.1 and 0.3 are the small and medium effects.
+- B2 = 0. x2 has no effect on y, but it is correlated with x1. If x2 shows up as significant, it is a false positive.
+- B3 = 0.3. I gave x3 a medium effect so the model looks more realistic.
+- σ² = 1. This keeps the error variance the same in every condition, so the only things changing are B1 and the sample size.
+- ρ = 0.3. In A3, I saw that power drops when predictors are correlated. Predictors in real data are usually correlated, and the correlation is also what lets x2 pick up a false effect when x1 is split. 0.3 is a medium correlation by Cohen's conventions.
+
+The predictors and errors are all normal, and the errors have constant variance. This means the OLS assumptions are met when x1 is left continuous, so the continuous analysis is the "correct" model to compare the median split against.
+
+Splitting x1 throws away information, since everyone above the median gets the same value no matter how high they are. Part of x1's effect is left over, and since x2 is correlated with x1, x2 can pick up some of that leftover effect.
+
+To make the predictors correlated at 0.3, I gave each one a shared piece (z) and its own unique piece (u), like in the A3 stretch. The shared piece gets a variance of 0.3 and the unique piece gets the rest (0.7), so each predictor still has a variance of 1.
+
+$$x_j = \sqrt{\rho} \, z + \sqrt{1 - \rho} \, u_j$$
+
+Below is the function to generate the simulated data.
+
+```{r}
+gen_data = function(n, b1, b0 = 0, b2 = 0, b3 = 0.3, rho = 0.3, sigma = 1){
+  z = rnorm(n)   # shared piece
+  x1 = sqrt(rho)*z + rnorm(n, mean=0, sd=sqrt(1-rho))
+  x2 = sqrt(rho)*z + rnorm(n, mean=0, sd=sqrt(1-rho))
+  x3 = sqrt(rho)*z + rnorm(n, mean=0, sd=sqrt(1-rho))
+  eps = rnorm(n, mean=0, sd=sigma)
+  y = b0 + b1*x1 + b2*x2 + b3*x3 + eps
+  data.frame(x1, x2, x3, y)
+}
+```
+
+Let's make sure the function works by generating a big data set and checking that I get back what I put in.
+
+```{r}
+set.seed(1234)
+big_data = gen_data(n = 100000, b1 = 0.3)
+big_fit = fit_ols(big_data, c("x1","x2","x3"), "y")
+
+dgp_check = data.frame(
+  Parameter = c("B0", "B1", "B2", "B3", "Sigma Squared",
+                "cor(x1, x2)", "cor(x1, x3)", "cor(x2, x3)"),
+  True_Value = c(0, 0.3, 0, 0.3, 1, 0.3, 0.3, 0.3),
+  Recovered = c(big_fit$coefficients$Estimate, big_fit$model_stats$Sigma2,
+                cor(big_data$x1, big_data$x2), cor(big_data$x1, big_data$x3),
+                cor(big_data$x2, big_data$x3))
+)
+dgp_check$Recovered = round(dgp_check$Recovered, 3)
+dgp_check
+```
+
+The recovered values are very close to the true values, so the function is working.
+
+## Condition Grid
+
+The grid crosses 14 sample sizes with 3 effect sizes (B1 = 0, 0.1, and 0.3), for a total of 42 cells. Every simulated data set is analyzed both ways, so the two analyses are compared on the exact same data. I only use positive values for B1, since the test is two-sided and a negative effect would give the same power.
+
+```{r}
+n_levels = c(20, 50, 75, 100, 125, 200, 400, 600, 800, 1000, 1200, 1600, 2000, 2400)
+b1_levels = c(0, 0.1, 0.3)
+
+grid = expand.grid(n = n_levels, b1 = b1_levels)
+grid$seed = 8670 + 1:nrow(grid)   # each cell gets its own seed
+nrow(grid)
+
+# grabs the seed for a cell
+cell_seed = function(n, b1){
+  grid$seed[grid$n == n & grid$b1 == b1]
+}
+```
+
+In A3, with independent predictors, n = 100 was enough to get 80% power for a medium effect, and it took about n = 800 for a small effect. Since the predictors are correlated now and the median split throws away information, I expect we will need more people than that.
+
+The smallest sample size is 20. With three predictors, that only leaves 16 residual degrees of freedom, so this is where problems with the false positive rate or the standard errors should show up first. The sample sizes roughly double from there, since the small effect needs a lot more people than the medium effect. I added extra levels around 100 to 200 and around 800 to 1,600, since that is where I expect each effect to cross 80%. I added 2,000 and 2,400 after the pilot (see the Design Revision section). B1 = 0 is run at every sample size, so the false positive rate gets checked across the whole range.
+
+To find the smallest sample size that reaches 80% power, I will take the two sample sizes on either side of 80% and draw a straight line between them to see where it crosses 80%.
+
+## Evaluation Criteria
+
+The continuous analysis is the correct model, so its checks tell me whether my code is working. The median split analysis is what I am studying.
+
+**For both analyses:**
+
+- Power for x1 (B1 = 0.1 and 0.3): the percent of replications where p \< 0.05. The target is at least 80%.
+- False positive rate for x1 (B1 = 0): the percent of replications where p \< 0.05. The target is 5%, give or take Monte Carlo error (0.0415 to 0.0585 with R = 2,500).
+- False positive rate for x2 (B2 = 0 in every cell): the percent of replications where x2 has p \< 0.05. The target is also 5%, give or take Monte Carlo error.
+
+**For B1 in the continuous analysis:**
+
+- Bias: the average B1 estimate minus the true B1. It should be within 2 MCSE of 0.
+- SE ratio: the analytical SE divided by the empirical SE (the SD of the B1 estimates). It should be within 2 MCSE of 1. For the analytical SE, I square the SEs, average them, and take the square root, which keeps the ratio from looking a little low at small sample sizes.
+- Coverage: the percent of 95% confidence intervals that contain the true B1. The target is 95%, give or take Monte Carlo error (0.9415 to 0.9585 with R = 2,500).
+
+**For B2 in the median split analysis:**
+
+- Bias: the average B2 estimate minus 0. It should be within 2 MCSE of 0.
+- Coverage: the percent of 95% confidence intervals for B2 that contain 0. The target is 95%, give or take Monte Carlo error.
+
+I am not checking bias or coverage for B1 in the median split analysis, since once x1 is split its coefficient is the difference between the high and low groups and not a slope. But B2 has a true value of 0 in both analyses, so I can check it in both.
+
+I am including bias, the SE ratio, and coverage because in IC-09, the naive model's confidence intervals only covered the true value about 80% of the time, so it was finding significant results way too often. If my standard errors were off, my power numbers would be off too. Each check has about a 1 in 20 chance of missing just by chance, so I won't worry about one or two misses, but a bunch of misses in the same direction means something is going on.
+
+I am using 80% power because it is the standard target from Cohen. Going up to 90% would take a lot more people and probably isn't worth it.
+
+## Replication Count
+
+Let's control the Monte Carlo Standard Error at 0.01. The MCSE for a proportion is $\sqrt{p(1-p)/R}$, which is biggest when p = 0.5.
+
+$$R = \frac{p(1-p)}{MCSE^2} = \frac{0.5 \times 0.5}{0.01^2} = 2500$$
+
+```{r}
+target_mcse = 0.01
+R_needed = ceiling(0.25 / target_mcse^2)
+R_needed
+```
+
+With 2,500 replications, a power estimate will be within about ±0.02 of the true value, and a false positive rate will be within about ±`{r} round(1.96*sqrt(0.05*0.95/R_needed), 4)` of 0.05. With only 1,000 replications, a false positive rate could be anywhere from `{r} round(0.05 - 1.96*sqrt(0.05*0.95/1000), 3)` to `{r} round(0.05 + 1.96*sqrt(0.05*0.95/1000), 3)` just from simulation noise, which is too wide to tell if x2's false positive rate is really above 5%.
+
+The full study will have 42 cells × 2,500 replications = 105,000 simulated data sets. Each one is analyzed twice, so that is 210,000 model fits.
+
+## Prototype
+
+For the prototype, I am running the cell with n = 100 and B1 = 0.3 with 500 replications. In A3, n = 100 was right around where the medium effect got to 80% power, so this cell should show how much power the median split costs.
+
+Below is the function for one replication. It simulates a data set, splits x1 at the median, fits both models with fit_ols(), and saves what we need for B1 and B2.
+
+```{r}
+one_rep = function(n, b1){
+  sim_data = gen_data(n, b1)
+  sim_data$x1_split = ifelse(sim_data$x1 > median(sim_data$x1), 1, 0)
+
+  # fit both models
+  cont = fit_ols(sim_data, c("x1","x2","x3"), "y")$coefficients
+  split = fit_ols(sim_data, c("x1_split","x2","x3"), "y")$coefficients
+
+  # t value for the 95% confidence intervals (both models have n - 4 df)
+  t_crit = qt(0.975, df = n - 4)
+
+  cont_est = cont["x1", "Estimate"]
+  cont_se = cont["x1", "Std. Error"]
+  split_est2 = split["x2", "Estimate"]
+  split_se2 = split["x2", "Std. Error"]
+
+  return(c(cont_est, cont_se, cont["x1", "Pr(>|t|)"],
+           cont_est - t_crit*cont_se, cont_est + t_crit*cont_se,
+           cont["x2", "Pr(>|t|)"], split["x1_split", "Pr(>|t|)"], split["x2", "Pr(>|t|)"],
+           split_est2, split_est2 - t_crit*split_se2, split_est2 + t_crit*split_se2))
+}
+```
+
+Like in A1, we create a data frame to hold the results and fill it in with a loop.
+
+```{r}
+run_cell = function(n, b1, R, seed){
+  set.seed(seed)
+  results = as.data.frame(matrix(NA, nrow=R, ncol=11))
+  names(results) = c("cont_est", "cont_se", "cont_p", "cont_lower", "cont_upper",
+                     "cont_p2", "split_p", "split_p2",
+                     "split_est2", "split_lower2", "split_upper2")
+  for (r in 1:R){
+    results[r,] = as.numeric(one_rep(n, b1))
+  }
+  return(results)
+}
+```
+
+Next is the function that builds the evaluation table. It returns each metric and TRUE or FALSE for whether it met its target.
+
+```{r}
+evaluate_cell = function(results, b1){
+  R = nrow(results)
+  band = 1.96 * sqrt(0.05 * 0.95 / R)   # Monte Carlo band around 0.05 and 0.95
+
+  # rejection rates
+  x1_cont = mean(results$cont_p < 0.05)
+  x1_split = mean(results$split_p < 0.05)
+  x2_cont = mean(results$cont_p2 < 0.05)
+  x2_split = mean(results$split_p2 < 0.05)
+
+  # B1 checks for the continuous analysis
+  bias1 = mean(results$cont_est) - b1
+  se_ratio1 = sqrt(mean(results$cont_se^2)) / sd(results$cont_est)
+  cover1 = mean(results$cont_lower <= b1 & b1 <= results$cont_upper)
+
+  # B2 checks for the median split analysis (true value is 0)
+  bias2 = mean(results$split_est2)
+  cover2 = mean(results$split_lower2 <= 0 & 0 <= results$split_upper2)
+
+  # Monte Carlo standard errors
+  mcse_bias1 = sd(results$cont_est) / sqrt(R)
+  mcse_ratio1 = se_ratio1 / sqrt(2*(R - 1))
+  mcse_bias2 = sd(results$split_est2) / sqrt(R)
+
+  # x1 target is 0.05 when there is no effect and at least 0.80 when there is one
+  if (b1 == 0){
+    x1_cont_ok = abs(x1_cont - 0.05) <= band
+    x1_split_ok = abs(x1_split - 0.05) <= band
+  } else {
+    x1_cont_ok = x1_cont >= 0.80
+    x1_split_ok = x1_split >= 0.80
+  }
+
+  data.frame(
+    Metric = c("x1 Rejection Rate (Continuous)", "x1 Rejection Rate (Split)",
+               "x2 False Positive Rate (Continuous)", "x2 False Positive Rate (Split)",
+               "B1 Bias (Continuous)", "B1 SE Ratio (Continuous)", "B1 Coverage (Continuous)",
+               "B2 Bias (Split)", "B2 Coverage (Split)"),
+    Estimate = round(c(x1_cont, x1_split, x2_cont, x2_split,
+                       bias1, se_ratio1, cover1, bias2, cover2), 4),
+    Meets_Target = c(x1_cont_ok, x1_split_ok,
+                     abs(x2_cont - 0.05) <= band, abs(x2_split - 0.05) <= band,
+                     abs(bias1) <= 2*mcse_bias1, abs(se_ratio1 - 1) <= 2*mcse_ratio1,
+                     abs(cover1 - 0.95) <= band,
+                     abs(bias2) <= 2*mcse_bias2, abs(cover2 - 0.95) <= band)
+  )
+}
+```
+
+Now we can run the prototype.
+
+```{r}
+proto = run_cell(n = 100, b1 = 0.3, R = 500, seed = cell_seed(100, 0.3))
+proto_eval = evaluate_cell(proto, b1 = 0.3)
+proto_eval
+```
+
+Power was `{r} proto_eval$Estimate[1]` with x1 continuous and `{r} proto_eval$Estimate[2]` with x1 median split. The continuous analysis checks (rows 3, 5, 6, and 7) show whether the code is working.
+
+## Pilot and Design Revision
+
+For the pilot, I am running three more cells with 500 replications each:
+
+- n = 20, B1 = 0. This is the smallest sample size, so if the false positive rate or the standard errors have problems, they should show up here.
+- n = 1,600, B1 = 0.1. The median split throws away about a third of the information, so I expect the small effect to need around 1,400 to 1,500 people under the split. This cell checks whether 1,600 is enough.
+- n = 1,600, B1 = 0.3. This is the biggest sample size in my original grid with the bigger effect, so if x2 picks up false effects from the split, it should show up the most here.
+
+```{r}
+pilot_n20 = run_cell(n = 20, b1 = 0, R = 500, seed = cell_seed(20, 0))
+pilot_small = run_cell(n = 1600, b1 = 0.1, R = 500, seed = cell_seed(1600, 0.1))
+pilot_medium = run_cell(n = 1600, b1 = 0.3, R = 500, seed = cell_seed(1600, 0.3))
+
+eval_n20 = evaluate_cell(pilot_n20, b1 = 0)
+eval_small = evaluate_cell(pilot_small, b1 = 0.1)
+eval_medium = evaluate_cell(pilot_medium, b1 = 0.3)
+
+# Putting the three cells side by side
+pilot_table = data.frame(
+  Metric = eval_n20$Metric,
+  n20 = eval_n20$Estimate, n20_ok = eval_n20$Meets_Target,
+  n1600_small = eval_small$Estimate, small_ok = eval_small$Meets_Target,
+  n1600_medium = eval_medium$Estimate, medium_ok = eval_medium$Meets_Target
+)
+pilot_table
+
+# How many of the code checks missed? All rows for the n = 20 null cell,
+# plus the continuous checks (rows 3, 5, 6, 7) for the two n = 1,600 cells
+pilot_misses = sum(!eval_n20$Meets_Target) +
+  sum(!eval_small$Meets_Target[c(3, 5, 6, 7)]) +
+  sum(!eval_medium$Meets_Target[c(3, 5, 6, 7)])
+pilot_misses
+```
+
+For the n = 20 cell, the x1 rejection rates are false positive rates. For the two n = 1,600 cells, they are power. In the n = 1,600 cells, a FALSE for the median split rows is a finding about the split, not a problem with my code.
+
+#### Design Revision
+
+Before: 12 sample sizes from 20 to 1,600 (36 cells).
+
+After: Added 2,000 and 2,400 (14 sample sizes, 42 cells).
+
+With a median split, power for the small effect at n = 1,600 was `{r} eval_small$Estimate[2]`, so the sample size needed is near the top of the original grid. The false positive rate for x2 under the split also went from `{r} proto_eval$Estimate[4]` at n = 100 to `{r} eval_medium$Estimate[4]` at n = 1,600 and was still climbing. The extra levels make sure the grid covers the sample size needed for the split and shows how high the x2 false positive rate goes.
+
+#### What Stayed the Same
+
+`{r} pilot_misses` of the 17 code checks missed their target. Each check has about a 5% chance of missing just by chance, so 1 or 2 misses is normal and the evaluation criteria stay the same. If more than 2 missed, I would look into it before running the full study.
+
+## AI Disclosure: 
+
+I honestly used AI to help with this assignment a lot more than the other ones. For the prototype section and the pilot, I leaned pretty heavily into using AI to vibe code those.
